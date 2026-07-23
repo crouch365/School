@@ -1,10 +1,12 @@
 // Тут описаны типы к каждой модели
 
-export enum UserRole {
-  ADMIN = "ADMIN",
-  TEACHER = "TEACHER",
-  STUDENT = "STUDENT",
-}
+export const UserRole = {
+  ADMIN: "ADMIN",
+  TEACHER: "TEACHER",
+  STUDENT: "STUDENT",
+} as const;
+
+export type UserRoleType = (typeof UserRole)[keyof typeof UserRole];
 
 export interface UserAttributes {
   id: number;
@@ -12,7 +14,7 @@ export interface UserAttributes {
   lastName: string;
   email: string;
   password: string;
-  role: UserRole;
+  role: UserRoleType;
   subject?: string;
   className?: string;
 }

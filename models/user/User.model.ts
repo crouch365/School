@@ -1,5 +1,5 @@
-import { DataTypes, Model, Optional, Sequelize } from "sequelize";
-import { UserAttributes, UserRole } from "./type";
+import { DataTypes, Model, Sequelize, type Optional } from "sequelize";
+import { UserRole, type UserAttributes, type UserRoleType } from "./type.ts";
 
 interface UserCreationAttributes extends Optional<UserAttributes, "id"> {}
 
@@ -12,11 +12,11 @@ export class User
   declare public lastName: string;
   declare public email: string;
   declare public password: string;
-  declare public role: UserRole;
+  declare public role: UserRoleType;
   public subject?: string;
   public className?: string;
 
-  public getResults!: () => Promise<TestResult[]>;
+  // public getResults!: () => Promise<TestResult[]>;
 }
 
 export const initUserModel = (sequelize: Sequelize) => {
@@ -64,7 +64,7 @@ export const initUserModel = (sequelize: Sequelize) => {
     {
       sequelize,
       modelName: "user",
-      tableName: "user",
+      tableName: "users",
     },
   );
 };
