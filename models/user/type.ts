@@ -1,5 +1,3 @@
-// Тут описаны типы к каждой модели
-
 export const UserRole = {
   ADMIN: "ADMIN",
   TEACHER: "TEACHER",
@@ -15,6 +13,5 @@ export interface UserAttributes {
   email: string;
   password: string;
   role: UserRoleType;
-  subject?: string;
-  className?: string;
+  className?: string | null; // только для учеников
 }

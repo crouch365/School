@@ -5,8 +5,8 @@ export class TeacherClass
   extends Model<TeacherClassAttributes>
   implements TeacherClassAttributes
 {
-  public teacherId!: number;
-  public className!: string;
+  declare teacherId: number;
+  declare className: string;
 }
 
 export const initTeacherClassModel = (sequelize: Sequelize) => {
@@ -18,16 +18,16 @@ export const initTeacherClassModel = (sequelize: Sequelize) => {
         primaryKey: true,
       },
       className: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(20),
         allowNull: false,
         primaryKey: true,
       },
     },
     {
       sequelize,
-      modelName: "teacher_class",
+      modelName: "TeacherClass",
       tableName: "teacher_classes",
-      timestamps: false, // Не нужны createdAt/updatedAt
+      timestamps: false,
     },
   );
 };
