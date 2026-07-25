@@ -1,7 +1,7 @@
 import { DataTypes, Model, Sequelize, type Optional } from "sequelize";
 import type { QuestionAttributes } from "./type.ts";
 
-export interface QuestionCreationAttributes extends Optional<
+interface QuestionCreationAttributes extends Optional<
   QuestionAttributes,
   "id"
 > {}
@@ -10,14 +10,11 @@ export class Question
   extends Model<QuestionAttributes, QuestionCreationAttributes>
   implements QuestionAttributes
 {
-  declare public id: number;
-  declare public testId: number;
-  declare public text: string;
-  declare public options: string[];
-  declare public correctOptionIndex: number;
-
-  // Связь с тестом
-  //   public getTest!: () => Promise<Test>;
+  declare id: number;
+  declare testId: number;
+  declare text: string;
+  declare options: string[];
+  declare correctOptionIndex: number;
 }
 
 export const initQuestionModel = (sequelize: Sequelize) => {
@@ -25,8 +22,8 @@ export const initQuestionModel = (sequelize: Sequelize) => {
     {
       id: {
         type: DataTypes.INTEGER,
-        autoIncrement: true,
         primaryKey: true,
+        autoIncrement: true,
       },
       testId: {
         type: DataTypes.INTEGER,
@@ -37,7 +34,7 @@ export const initQuestionModel = (sequelize: Sequelize) => {
         allowNull: false,
       },
       options: {
-        type: DataTypes.JSON, // Храним как JSON массив строк
+        type: DataTypes.JSONB, // Postgres
         allowNull: false,
       },
       correctOptionIndex: {
@@ -47,8 +44,9 @@ export const initQuestionModel = (sequelize: Sequelize) => {
     },
     {
       sequelize,
-      modelName: "question",
+      modelName: "Question",
       tableName: "questions",
+      timestamps: true,
     },
   );
 };

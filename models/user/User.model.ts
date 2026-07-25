@@ -7,16 +7,13 @@ export class User
   extends Model<UserAttributes, UserCreationAttributes>
   implements UserAttributes
 {
-  declare public id: number;
-  declare public name: string;
-  declare public lastName: string;
-  declare public email: string;
-  declare public password: string;
-  declare public role: UserRoleType;
-  public subject?: string;
-  public className?: string;
-
-  // public getResults!: () => Promise<TestResult[]>;
+  declare id: number;
+  declare name: string;
+  declare lastName: string;
+  declare email: string;
+  declare password: string;
+  declare role: UserRoleType;
+  declare className: string | null;
 }
 
 export const initUserModel = (sequelize: Sequelize) => {
@@ -28,23 +25,20 @@ export const initUserModel = (sequelize: Sequelize) => {
         autoIncrement: true,
       },
       name: {
-        type: DataTypes.STRING,
-        unique: false,
+        type: DataTypes.STRING(100),
         allowNull: false,
       },
       lastName: {
-        type: DataTypes.STRING,
-        unique: false,
+        type: DataTypes.STRING(100),
         allowNull: false,
       },
       email: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(255),
         unique: true,
         allowNull: false,
       },
       password: {
-        type: DataTypes.STRING,
-        unique: false,
+        type: DataTypes.STRING(255),
         allowNull: false,
       },
       role: {
@@ -52,19 +46,16 @@ export const initUserModel = (sequelize: Sequelize) => {
         defaultValue: UserRole.STUDENT,
         allowNull: false,
       },
-      subject: {
-        type: DataTypes.STRING,
-        allowNull: true,
-      },
       className: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(20),
         allowNull: true,
       },
     },
     {
       sequelize,
-      modelName: "user",
+      modelName: "User",
       tableName: "users",
+      timestamps: true,
     },
   );
 };
