@@ -18,7 +18,7 @@ export class Test
   //   public getResults!: () => Promise<TestResult[]>;
 }
 
-export const initTEstModel = (sequelize: Sequelize) => {
+export const initTestModel = (sequelize: Sequelize) => {
   Test.init(
     {
       id: {
