@@ -7,10 +7,10 @@ import teacherRouter from "./teacherRouter.ts";
 
 const router = Router();
 
-router.use("/auth", authRouter); // /api/auth/*
-router.use("/users", userRouter); // /api/users/*
-router.use("/tests", testRouter); // /api/tests/*
-router.use("/results", resultRouter); // /api/results/*
-router.use("/teachers", teacherRouter); // /api/teachers/*
+router.use("/auth", authRouter);
+router.use("/users", userRouter);
+router.use("/tests", testRouter);
+router.use("/results", resultRouter);
+router.use("/teachers", teacherRouter);
 
 export default router;
