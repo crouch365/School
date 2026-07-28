@@ -1,73 +1,45 @@
-import bcrypt from "bcrypt";
-import { UserRole } from "../models/user/type.js";
-import { User } from "../models/user/User.model.js";
 import type { NextFunction, Request, Response } from "express";
+import { User } from "../models/index.ts";
+import { UserRole } from "../models/user/type.ts";
+import ApiError from "../errors/ApiError.ts";
+import { hashPassword } from "../utils/password.ts";
+import {
+  generatePassword,
+  generateUniqueEmail,
+} from "../utils/generateCredentials.ts";
+import { parseIdParam } from "../utils/parseId.ts";
 
-const generatePassword = (length = 8) => {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from(
-    { length },
-    () => chars[Math.floor(Math.random() * chars.length)],
-  ).join("");
-};
-
-const transliterate = (str: string) => {
-  const map: Record<string, string> = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "g",
-    д: "d",
-    е: "e",
-    ё: "e",
-    ж: "zh",
-    з: "z",
-    и: "i",
-    й: "y",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    о: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ф: "f",
-    х: "h",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "sch",
-    ы: "y",
-    э: "e",
-    ю: "yu",
-    я: "ya",
-  };
-  return str
-    .toLowerCase()
-    .split("")
-    .map((char) => map[char] || char)
-    .join("");
-};
-
-const generateEmail = (name: string, lastName: string) => {
-  const first = transliterate(name);
-  const last = transliterate(lastName);
-  return `${first}.${last}${Math.floor(Math.random() * 1000)}@school.local`;
-};
+const SAFE_ATTRIBUTES = { exclude: ["password"] };
 
 class UserController {
   async getAll(req: Request, res: Response, next: NextFunction) {
     try {
-      const users = await User.findAll({
-        attributes: { exclude: ["password"] },
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const limit = Math.min(100, Number(req.query.limit) || 20);
+
+      const { rows, count } = await User.findAndCountAll({
+        attributes: SAFE_ATTRIBUTES,
+        limit,
+        offset: (page - 1) * limit,
       });
-      res.json(users);
+
+      res.json({ items: rows, total: count, page, limit });
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при получении пользователей" });
+      next(error);
+    }
+  }
+
+  async getOne(req: Request, res: Response, next: NextFunction) {
+    try {
+      const user = await User.findByPk(parseIdParam(req.params.id), {
+        attributes: SAFE_ATTRIBUTES,
+      });
+      if (!user) {
+        return next(ApiError.notFound("Пользователь не найден"));
+      }
+      res.json(user);
+    } catch (error) {
+      next(error);
     }
   }
 
@@ -75,9 +47,16 @@ class UserController {
     try {
       const { name, lastName, role, className } = req.body;
 
-      const email = generateEmail(name, lastName);
-      const plainPassword = generatePassword(8);
-      const hashedPassword = await bcrypt.hash(plainPassword, 5);
+      if (!name || !lastName || !role) {
+        return next(ApiError.badRequest("Не переданы name, lastName или role"));
+      }
+      if (!Object.values(UserRole).includes(role)) {
+        return next(ApiError.badRequest("Некорректная роль"));
+      }
+
+      const email = await generateUniqueEmail(name, lastName);
+      const plainPassword = generatePassword();
+      const hashedPassword = await hashPassword(plainPassword);
 
       const user = await User.create({
         name,
@@ -88,25 +67,28 @@ class UserController {
         className: role === UserRole.STUDENT ? className : null,
       });
 
+      // Пароль в открытом виде отдаём только один раз, прямо сейчас —
+      // больше его нигде не будет, ни в БД, ни в последующих ответах.
       res.status(201).json({
         id: user.id,
         name: user.name,
         lastName: user.lastName,
         email: user.email,
-        plainPassword, // Отдаем только при создании!
+        plainPassword,
         role: user.role,
         className: user.className,
       });
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при создании пользователя" });
+      next(error);
     }
   }
 
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = await User.findByPk(req.params.id);
-      if (!user)
-        return res.status(404).json({ message: "Пользователь не найден" });
+      const user = await User.findByPk(parseIdParam(req.params.id));
+      if (!user) {
+        return next(ApiError.notFound("Пользователь не найден"));
+      }
 
       const { name, lastName, role, className } = req.body;
       await user.update({
@@ -116,22 +98,24 @@ class UserController {
         className: role === UserRole.STUDENT ? className : null,
       });
 
-      res.json(user);
+      const { password, ...safeUser } = user.get({ plain: true });
+      res.json(safeUser);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при обновлении пользователя" });
+      next(error);
     }
   }
 
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = await User.findByPk(req.params.id);
-      if (!user)
-        return res.status(404).json({ message: "Пользователь не найден" });
+      const user = await User.findByPk(parseIdParam(req.params.id));
+      if (!user) {
+        return next(ApiError.notFound("Пользователь не найден"));
+      }
 
       await user.destroy();
-      res.json({ message: "Пользователь успешно удален" });
+      res.json({ message: "Пользователь успешно удалён" });
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при удалении пользователя" });
+      next(error);
     }
   }
 }

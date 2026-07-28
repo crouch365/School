@@ -1,44 +1,57 @@
 import type { NextFunction, Request, Response } from "express";
-import bcrypt from "bcrypt";
 import { User } from "../models/index.ts";
 import ApiError from "../errors/ApiError.ts";
+import { comparePassword } from "../utils/password.ts";
+import { generateJwt } from "../utils/jwt.ts";
+
+// Публичной регистрации нет намеренно: аккаунты создаёт только ADMIN
+// через POST /api/users (там же генерируются email и пароль). Ученики
+// и учителя себя сами не регистрируют.
 
 class AuthController {
-  // нужно добавит везде регистрацию тоже, так как иначе токен никак на засунуть  токен jwt в env
-  //   async registration(req: Request, res: Response, next: NextFunction) {
-  //     const { email, password, role } = req.body;
-  //     if (!email || !password) {
-  //       return next(ApiError.badRequest("Некорректный email или password"));
-  //     }
-  //     const candidate = await User.findOne({ where: { email } });
-  //     if (candidate) {
-  //       return next(
-  //         ApiError.badRequest("Пользователь с таким email уже существует"),
-  //       );
-  //     }
-  //     const hashPassword = await bcrypt.hash(password, 5);
-  //     const user = await User.create({ email, role, password: hashPassword });
-  //     const token = generateJwt(user.id, user.email, user.role);
-  //     return res.json({ token });
-  //   }
   async login(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password } = req.body;
 
-      const user = await User.findOne({ where: email });
-      if (!user) {
-        return next(ApiError.internal("Пользователь не найден"));
+      if (!email || !password) {
+        return next(ApiError.badRequest("Не переданы email или пароль"));
       }
 
-      let isPasswordValidate = await bcrypt.compare(password, user.password);
-      if (!isPasswordValidate) {
-        return next(ApiError.internal("Указан неверный пароль"));
+      const user = await User.findOne({ where: { email } });
+
+      // Намеренно одно и то же сообщение для "нет такого email" и
+      // "неверный пароль" — иначе по коду ответа можно перебором
+      // выяснять, какие email вообще существуют в системе.
+      const invalidCredentials = () =>
+        next(ApiError.unauthorized("Неверный email или пароль"));
+
+      if (!user) {
+        return invalidCredentials();
       }
-      //   const token = generateJwt(user.id, user.email, user.role);
-      //   return res.json({ token });
+
+      const isPasswordValid = await comparePassword(password, user.password);
+      if (!isPasswordValid) {
+        return invalidCredentials();
+      }
+
+      const token = generateJwt({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        className: user.className,
+      });
+
+      res.json({ token });
     } catch (error) {
-      console.error("AuthController.login error:", error);
-      res.status(500).json({ message: "Ошибка сервера при авторизации" });
+      next(error);
     }
   }
+
+  async check(req: Request, res: Response, next: NextFunction) {
+    // req.user уже проверен и заполнен authMiddleware к этому моменту
+    const token = generateJwt(req.user!);
+    res.json({ token, user: req.user });
+  }
 }
+
+export default new AuthController();
