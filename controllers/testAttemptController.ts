@@ -1,69 +1,94 @@
 import type { Request, Response, NextFunction } from "express";
-import { TestAttempt as TestAttemptModel } from "../models/testAttempt/TestAttempt.model.ts";
-import { Test } from "../models/test/Test.model.js";
+import { TestAttempt } from "../models/testAttempt/TestAttempt.model.ts";
+import { Test } from "../models/test/Test.model.ts";
 import { Question } from "../models/question/Question.model.ts";
+import { TestAccess } from "../models/testAccess/TestAccess.model.ts";
 import { AttemptStatus } from "../models/testAttempt/type.ts";
+import { UserRole } from "../models/user/type.ts";
+import ApiError from "../errors/ApiError.ts";
 
 class TestAttemptController {
   async submit(req: Request, res: Response, next: NextFunction) {
     try {
-      const { studentId, testId, answers } = req.body;
+      const user = req.user!;
+      const studentId = user.id; // никогда не берём studentId из body
+      const { testId, answers } = req.body;
 
-      // 1. Находим попытку или создаем новую
-      let attempt = await TestAttemptModel.findOne({
-        where: { studentId, testId },
-      });
+      if (!testId || !Array.isArray(answers)) {
+        return next(ApiError.badRequest("Не переданы testId или answers"));
+      }
 
       const test = await Test.findByPk(testId, {
         include: [{ model: Question, as: "questions" }],
       });
-      if (!test) return res.status(404).json({ message: "Тест не найден" });
+      if (!test) return next(ApiError.notFound("Тест не найден"));
 
-      // 2. Если попытки не было, создаем её (старт)
-      if (!attempt) {
-        attempt = await TestAttemptModel.create({
+      if (!user.className) {
+        return next(ApiError.forbidden("Вам не назначен класс"));
+      }
+
+      // Ключевая проверка бизнес-правила: решать тест можно только
+      // после того как учитель открыл доступ для класса ученика.
+      const access = await TestAccess.findOne({
+        where: { testId: test.id, className: user.className, isOpen: true },
+      });
+      if (!access) {
+        return next(
+          ApiError.forbidden(
+            "Доступ к этому тесту закрыт или не назначен вашему классу",
+          ),
+        );
+      }
+
+      // findOrCreate — атомарно на уровне БД, чтобы двойной клик "начать тест"
+      // не создал две попытки параллельно и не упал на уникальном индексе.
+      const [attempt] = await TestAttempt.findOrCreate({
+        where: { studentId, testId },
+        defaults: {
           studentId,
           testId,
           startedAt: new Date(),
           status: AttemptStatus.IN_PROGRESS,
-        });
-      }
-
-      // 3. ПРОВЕРКА ТАЙМЕРА НА СЕРВЕРЕ
-      const startTime = new Date(attempt.startedAt).getTime();
-      const currentTime = Date.now();
-      const elapsedSeconds = Math.floor((currentTime - startTime) / 1000);
-
-      if (elapsedSeconds > (test as any).timeLimit) {
-        await attempt.update({ status: AttemptStatus.EXPIRED });
-        return res.status(400).json({
-          message: "Время на выполнение теста истекло",
-          elapsedSeconds,
-          timeLimit: (test as any).timeLimit,
-        });
-      }
-
-      // 4. ПРОВЕРКА КОЛИЧЕСТВА ОТВЕТОВ
-      if (answers.length !== (test as any).questions.length) {
-        return res.status(400).json({
-          message: "Количество ответов не совпадает с количеством вопросов",
-        });
-      }
-
-      // 5. ПОДСЧЕТ БАЛЛОВ НА СЕРВЕРЕ
-      let score = 0;
-      (test as any).questions.forEach((question: any, index: number) => {
-        if (answers[index] === question.correctOptionIndex) {
-          score++;
-        }
+        },
       });
 
-      // 6. СОХРАНЕНИЕ РЕЗУЛЬТАТА
+      if (attempt.status === AttemptStatus.COMPLETED) {
+        return next(
+          ApiError.badRequest("Тест уже сдан, повторная попытка недоступна"),
+        );
+      }
+
+      const startTime = new Date(attempt.startedAt).getTime();
+      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+
+      if (elapsedSeconds > test.timeLimit) {
+        await attempt.update({ status: AttemptStatus.EXPIRED });
+        return next(
+          ApiError.badRequest(
+            `Время на выполнение теста истекло (${elapsedSeconds}s > ${test.timeLimit}s)`,
+          ),
+        );
+      }
+
+      const questions = test.questions ?? [];
+      if (answers.length !== questions.length) {
+        return next(
+          ApiError.badRequest(
+            "Количество ответов не совпадает с количеством вопросов",
+          ),
+        );
+      }
+
+      let score = 0;
+      questions.forEach((question, index) => {
+        if (answers[index] === question.correctOptionIndex) score++;
+      });
+
       await attempt.update({
         status: AttemptStatus.COMPLETED,
         finishedAt: new Date(),
         score,
-        totalQuestions: (test as any).questions.length,
+        totalQuestions: questions.length,
         answers,
       });
 
@@ -71,19 +96,18 @@ class TestAttemptController {
         id: attempt.id,
         score: attempt.score,
         totalQuestions: attempt.totalQuestions,
-        message: "Результат сохранен. Ожидайте проверки учителем.",
+        message: "Результат сохранён",
       });
     } catch (error) {
-      console.error("TestAttemptController.submit error:", error);
-      res.status(500).json({ message: "Ошибка при сохранении результата" });
+      next(error);
     }
   }
 
   async getMy(req: Request, res: Response, next: NextFunction) {
     try {
-      const { studentId } = req.query;
+      const studentId = req.user!.id; // всегда свои результаты, id не из query
 
-      const attempts = await TestAttemptModel.findAll({
+      const attempts = await TestAttempt.findAll({
         where: { studentId, status: AttemptStatus.COMPLETED },
         include: [
           { model: Test, as: "test", attributes: ["id", "title", "subject"] },
@@ -93,28 +117,35 @@ class TestAttemptController {
 
       res.json(attempts);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при получении результатов" });
+      next(error);
     }
   }
 
   async getByStudent(req: Request, res: Response, next: NextFunction) {
     try {
-      // Учитель видит ВСЁ: и ответы ученика, и правильные ответы для анализа
-      const attempts = await TestAttemptModel.findAll({
-        where: { studentId: req.params.studentId },
+      const user = req.user!;
+      const studentId = req.params.studentId;
+
+      // Учитель видит результаты ученика только по своим тестам,
+      // не по всем предметам подряд. Админ видит всё.
+      const testWhere =
+        user.role === UserRole.TEACHER ? { teacherId: user.id } : undefined;
+
+      const attempts = await TestAttempt.findAll({
+        where: { studentId },
         include: [
           {
             model: Test,
             as: "test",
+            where: testWhere,
+            required: true,
             include: [{ model: Question, as: "questions" }],
           },
         ],
       });
       res.json(attempts);
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Ошибка при получении результатов ученика" });
+      next(error);
     }
   }
 }

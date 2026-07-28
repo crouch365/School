@@ -1,71 +1,82 @@
-import { Test } from "../models/test/Test.model.js";
-import { Question } from "../models/question/Question.model.js";
-import { TestAccess } from "../models/testAccess/TestAccess.model.js";
-import { UserRole } from "../models/user/type.js";
+import { Test } from "../models/test/Test.model.ts";
+import { Question } from "../models/question/Question.model.ts";
+import { TestAccess } from "../models/testAccess/TestAccess.model.ts";
+import { UserRole } from "../models/user/type.ts";
+import ApiError from "../errors/ApiError.ts";
+import { assertOwnsTest, assertTeachesSubject } from "../utils/ownership.ts";
+import { parseIdParam } from "../utils/parseId.ts";
 import type { NextFunction, Request, Response } from "express";
 
 class TestController {
   async getAll(req: Request, res: Response, next: NextFunction) {
     try {
-      const userRole = req.query.role as string; // В будущем заменим на извлечение из JWT
-      const userClassName = req.query.className as string;
+      const user = req.user!;
 
-      if (userRole === UserRole.STUDENT && userClassName) {
-        // Ученик видит только тесты, открытые для его класса
+      if (user.role === UserRole.STUDENT) {
+        if (!user.className) {
+          return res.json([]); // ученик без класса не видит тестов
+        }
         const tests = await Test.findAll({
           include: [
             {
               model: TestAccess,
-              as: "accesses", // Убедись, что alias в initModels называется "accesses"
-              where: { className: userClassName, isOpen: true },
-              attributes: [], // Не возвращаем саму запись доступа, только фильтруем по ней
+              as: "accesses",
+              where: { className: user.className, isOpen: true },
+              attributes: [],
             },
             {
               model: Question,
               as: "questions",
-              attributes: ["id", "text", "options"], // БЕЗ correctOptionIndex
+              attributes: ["id", "text", "options"], // без correctOptionIndex
             },
           ],
         });
         return res.json(tests);
       }
 
-      // Админ и учитель видят все тесты (учителю можно добавить фильтр по teacherId)
+      if (user.role === UserRole.TEACHER) {
+        // Учитель видит только свои тесты
+        const tests = await Test.findAll({
+          where: { teacherId: user.id },
+          include: [{ model: Question, as: "questions" }],
+        });
+        return res.json(tests);
+      }
+
+      // ADMIN видит всё
       const tests = await Test.findAll({
         include: [{ model: Question, as: "questions" }],
       });
       res.json(tests);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при получении тестов" });
+      next(error);
     }
   }
 
   async getOne(req: Request, res: Response, next: NextFunction) {
     try {
-      const test = await Test.findByPk(req.params.id, {
+      const user = req.user!;
+      const test = await Test.findByPk(parseIdParam(req.params.id), {
         include: [{ model: Question, as: "questions" }],
       });
-      if (!test) return res.status(404).json({ message: "Тест не найден" });
+      if (!test) return next(ApiError.notFound("Тест не найден"));
 
-      const userRole = req.query.role as string;
-
-      if (userRole === UserRole.STUDENT) {
-        // Проверка доступа через TestAccess
+      if (user.role === UserRole.STUDENT) {
+        if (!user.className) {
+          return next(ApiError.forbidden("Вам не назначен класс"));
+        }
         const access = await TestAccess.findOne({
-          where: {
-            testId: test.id,
-            className: req.query.className,
-            isOpen: true,
-          },
+          where: { testId: test.id, className: user.className, isOpen: true },
         });
         if (!access) {
-          return res.status(403).json({
-            message:
+          return next(
+            ApiError.forbidden(
               "Доступ к этому тесту закрыт или не назначен вашему классу",
-          });
+            ),
+          );
         }
 
-        const safeQuestions = (test as any).questions.map((q: any) => ({
+        const safeQuestions = (test.questions ?? []).map((q) => ({
           id: q.id,
           text: q.text,
           options: q.options,
@@ -82,16 +93,40 @@ class TestController {
         });
       }
 
-      // Учителю и админу отдаем всё, включая correctOptionIndex
+      if (user.role === UserRole.TEACHER) {
+        assertOwnsTest(user, test);
+      }
+
+      // TEACHER (владелец) и ADMIN получают всё, включая correctOptionIndex
       res.json(test);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при получении теста" });
+      next(error);
     }
   }
 
   async create(req: Request, res: Response, next: NextFunction) {
     try {
-      const { teacherId, subject, title, description, timeLimit } = req.body;
+      const user = req.user!;
+      const { subject, title, description, timeLimit } = req.body;
+
+      if (!subject || !title || !timeLimit) {
+        return next(
+          ApiError.badRequest("Не переданы subject, title или timeLimit"),
+        );
+      }
+
+      // Учитель не может создать тест "от имени" другого учителя —
+      // teacherId всегда берём из токена, а не из тела запроса.
+      // Админ может явно указать teacherId (создаёт тест за учителя).
+      const teacherId =
+        user.role === UserRole.ADMIN
+          ? (req.body.teacherId ?? user.id)
+          : user.id;
+
+      if (user.role === UserRole.TEACHER) {
+        await assertTeachesSubject(user, subject);
+      }
+
       const test = await Test.create({
         teacherId,
         subject,
@@ -101,76 +136,120 @@ class TestController {
       });
       res.status(201).json(test);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при создании теста" });
+      next(error);
     }
   }
 
   async update(req: Request, res: Response, next: NextFunction) {
     try {
-      const test = await Test.findByPk(req.params.id);
-      if (!test) return res.status(404).json({ message: "Тест не найден" });
+      const user = req.user!;
+      const test = await Test.findByPk(parseIdParam(req.params.id));
+      if (!test) return next(ApiError.notFound("Тест не найден"));
+      assertOwnsTest(user, test);
 
-      const { teacherId, subject, title, description, timeLimit } = req.body;
-      await test.update({ teacherId, subject, title, description, timeLimit });
+      const { subject, title, description, timeLimit } = req.body;
+      await test.update({ subject, title, description, timeLimit });
       res.json(test);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при обновлении теста" });
+      next(error);
     }
   }
 
   async delete(req: Request, res: Response, next: NextFunction) {
     try {
-      const test = await Test.findByPk(req.params.id);
-      if (!test) return res.status(404).json({ message: "Тест не найден" });
+      const user = req.user!;
+      const test = await Test.findByPk(parseIdParam(req.params.id));
+      if (!test) return next(ApiError.notFound("Тест не найден"));
+      assertOwnsTest(user, test);
 
       await test.destroy();
-      res.json({ message: "Тест успешно удален" });
+      res.json({ message: "Тест успешно удалён" });
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при удалении теста" });
+      next(error);
     }
   }
 
   async addQuestion(req: Request, res: Response, next: NextFunction) {
     try {
+      const user = req.user!;
+      const test = await Test.findByPk(
+        parseIdParam(req.params.testId, "testId"),
+      );
+      if (!test) return next(ApiError.notFound("Тест не найден"));
+      assertOwnsTest(user, test);
+
       const { text, options, correctOptionIndex } = req.body;
+      if (
+        !text ||
+        !Array.isArray(options) ||
+        options.length < 2 ||
+        !Number.isInteger(correctOptionIndex) ||
+        correctOptionIndex < 0 ||
+        correctOptionIndex >= options.length
+      ) {
+        return next(
+          ApiError.badRequest(
+            "Некорректный вопрос: нужны text, минимум 2 options и correctOptionIndex в границах options",
+          ),
+        );
+      }
+
       const question = await Question.create({
-        testId: Number(req.params.testId),
+        testId: test.id,
         text,
         options,
         correctOptionIndex,
       });
       res.status(201).json(question);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при добавлении вопроса" });
+      next(error);
     }
   }
 
   async updateQuestion(req: Request, res: Response, next: NextFunction) {
     try {
-      const question = await Question.findByPk(req.params.questionId);
-      if (!question || question.testId !== Number(req.params.testId)) {
-        return res.status(404).json({ message: "Вопрос не найден" });
+      const user = req.user!;
+      const test = await Test.findByPk(
+        parseIdParam(req.params.testId, "testId"),
+      );
+      if (!test) return next(ApiError.notFound("Тест не найден"));
+      assertOwnsTest(user, test);
+
+      const question = await Question.findByPk(
+        parseIdParam(req.params.questionId, "questionId"),
+      );
+      if (!question || question.testId !== test.id) {
+        return next(ApiError.notFound("Вопрос не найден"));
       }
 
       const { text, options, correctOptionIndex } = req.body;
       await question.update({ text, options, correctOptionIndex });
       res.json(question);
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при обновлении вопроса" });
+      next(error);
     }
   }
 
   async deleteQuestion(req: Request, res: Response, next: NextFunction) {
     try {
-      const question = await Question.findByPk(req.params.questionId);
-      if (!question || question.testId !== Number(req.params.testId)) {
-        return res.status(404).json({ message: "Вопрос не найден" });
+      const user = req.user!;
+      const test = await Test.findByPk(
+        parseIdParam(req.params.testId, "testId"),
+      );
+      if (!test) return next(ApiError.notFound("Тест не найден"));
+      assertOwnsTest(user, test);
+
+      const question = await Question.findByPk(
+        parseIdParam(req.params.questionId, "questionId"),
+      );
+      if (!question || question.testId !== test.id) {
+        return next(ApiError.notFound("Вопрос не найден"));
       }
 
       await question.destroy();
-      res.json({ message: "Вопрос успешно удален" });
+      res.json({ message: "Вопрос успешно удалён" });
     } catch (error) {
-      res.status(500).json({ message: "Ошибка при удалении вопроса" });
+      next(error);
     }
   }
 }

@@ -1,15 +1,19 @@
-import { Router, type Request, type Response } from "express";
+// routes/authRouter.ts
+import { Router } from "express";
+import authController from "../controllers/authController.ts";
+import authMiddleware from "../middlewares/auth.middleware.ts";
+import validate from "../middlewares/validate.middleware.ts";
+import { loginRateLimiter } from "../middlewares/rateLimiter.middleware.ts";
+import { loginSchema } from "../schemas/auth.schema.ts";
 
 const router = Router();
 
-// POST /api/auth/login - вход в систему
-router.post("/login", async (req: Request, res: Response) => {
-  res.json({ message: "POST /api/auth/login (заглушка)" });
-});
-
-// GET /api/auth/me - получить текущего пользователя
-router.get("/me", async (req: Request, res: Response) => {
-  res.json({ message: "GET /api/auth/me (заглушка)" });
-});
+router.post(
+  "/login",
+  loginRateLimiter,
+  validate({ body: loginSchema }),
+  authController.login,
+);
+router.get("/me", authMiddleware, authController.check);
 
 export default router;

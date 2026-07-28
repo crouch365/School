@@ -1,5 +1,13 @@
-import { DataTypes, Model, Sequelize, type Optional } from "sequelize";
+// models/test/Test.model.ts
+import {
+  DataTypes,
+  Model,
+  Sequelize,
+  type NonAttribute,
+  type Optional,
+} from "sequelize";
 import type { TestAttributes } from "./type.ts";
+import type { Question } from "../question/Question.model.ts";
 
 interface TestCreationAttributes extends Optional<
   TestAttributes,
@@ -16,6 +24,9 @@ export class Test
   declare title: string;
   declare description: string | null;
   declare timeLimit: number;
+
+  // Заполняется только когда включено через `include: [{ as: "questions" }]`
+  declare questions?: NonAttribute<Question[]>;
 }
 
 export const initTestModel = (sequelize: Sequelize) => {

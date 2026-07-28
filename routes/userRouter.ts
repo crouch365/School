@@ -1,30 +1,20 @@
-import { Router, type Request, type Response } from "express";
+// routes/userRouter.ts
+import { Router } from "express";
+import userController from "../controllers/userController.ts";
+import authMiddleware from "../middlewares/auth.middleware.ts";
+import requireRole from "../middlewares/role.middleware.ts";
+import validate from "../middlewares/validate.middleware.ts";
+import { UserRole } from "../models/user/type.ts";
+import { createUserSchema, updateUserSchema } from "../schemas/user.schema.ts";
 
 const router = Router();
 
-// GET /api/users - список всех пользователей
-router.get("/", async (req: Request, res: Response) => {
-  res.json({ message: "GET /api/users (заглушка)" });
-});
+router.use(authMiddleware, requireRole(UserRole.ADMIN));
 
-// GET /api/users/:id - конкретный пользователь
-router.get("/:id", async (req: Request, res: Response) => {
-  res.json({ message: `GET /api/users/${req.params.id} (заглушка)` });
-});
-
-// POST /api/users - создать пользователя (админ создает, генерирует логин/пароль)
-router.post("/", async (req: Request, res: Response) => {
-  res.json({ message: "POST /api/users (заглушка)" });
-});
-
-// PUT /api/users/:id - изменить пользователя
-router.put("/:id", async (req: Request, res: Response) => {
-  res.json({ message: `PUT /api/users/${req.params.id} (заглушка)` });
-});
-
-// DELETE /api/users/:id - удалить пользователя
-router.delete("/:id", async (req: Request, res: Response) => {
-  res.json({ message: `DELETE /api/users/${req.params.id} (заглушка)` });
-});
+router.get("/", userController.getAll);
+router.get("/:id", userController.getOne);
+router.post("/", validate({ body: createUserSchema }), userController.create);
+router.put("/:id", validate({ body: updateUserSchema }), userController.update);
+router.delete("/:id", userController.delete);
 
 export default router;
