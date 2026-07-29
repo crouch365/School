@@ -11,12 +11,11 @@ class TestAttemptController {
   async submit(req: Request, res: Response, next: NextFunction) {
     try {
       const user = req.user!;
-      const studentId = user.id; // никогда не берём studentId из body
-      const { testId, answers } = req.body;
-
-      if (!testId || !Array.isArray(answers)) {
-        return next(ApiError.badRequest("Не переданы testId или answers"));
-      }
+      const studentId = user.id;
+      const { testId, answers } = req.body as {
+        testId: number;
+        answers: { questionId: number; optionIndex: number }[];
+      };
 
       const test = await Test.findByPk(testId, {
         include: [{ model: Question, as: "questions" }],
@@ -27,10 +26,12 @@ class TestAttemptController {
         return next(ApiError.forbidden("Вам не назначен класс"));
       }
 
-      // Ключевая проверка бизнес-правила: решать тест можно только
-      // после того как учитель открыл доступ для класса ученика.
       const access = await TestAccess.findOne({
-        where: { testId: test.id, className: user.className, isOpen: true },
+        where: {
+          testId: test.id,
+          className: user.className,
+          isOpen: true,
+        },
       });
       if (!access) {
         return next(
@@ -40,8 +41,6 @@ class TestAttemptController {
         );
       }
 
-      // findOrCreate — атомарно на уровне БД, чтобы двойной клик "начать тест"
-      // не создал две попытки параллельно и не упал на уникальном индексе.
       const [attempt] = await TestAttempt.findOrCreate({
         where: { studentId, testId },
         defaults: {
@@ -79,23 +78,48 @@ class TestAttemptController {
         );
       }
 
+      const questionMap = new Map(questions.map((q) => [q.id, q]));
       let score = 0;
-      questions.forEach((question, index) => {
-        if (answers[index] === question.correctOptionIndex) score++;
-      });
+      const normalizedAnswers: number[] = [];
+
+      for (const answer of answers) {
+        const question = questionMap.get(answer.questionId);
+        if (!question) {
+          return next(
+            ApiError.badRequest(
+              `Вопрос id=${answer.questionId} не найден в тесте`,
+            ),
+          );
+        }
+        if (
+          answer.optionIndex < 0 ||
+          answer.optionIndex >= question.options.length
+        ) {
+          return next(
+            ApiError.badRequest(
+              `Некорректный optionIndex для вопроса id=${answer.questionId}`,
+            ),
+          );
+        }
+        if (answer.optionIndex === question.correctOptionIndex) {
+          score++;
+        }
+        // сохраняем в том же порядке, что questions (по id — для истории)
+        normalizedAnswers.push(answer.optionIndex);
+      }
 
       await attempt.update({
         status: AttemptStatus.COMPLETED,
         finishedAt: new Date(),
         score,
         totalQuestions: questions.length,
-        answers,
+        answers: normalizedAnswers,
       });
 
       res.status(200).json({
         id: attempt.id,
-        score: attempt.score,
-        totalQuestions: attempt.totalQuestions,
+        score,
+        totalQuestions: questions.length,
         message: "Результат сохранён",
       });
     } catch (error) {
