@@ -1,9 +1,16 @@
-import { DataTypes, Model, Sequelize, type Optional } from "sequelize";
+import {
+  DataTypes,
+  Model,
+  Sequelize,
+  type NonAttribute,
+  type Optional,
+} from "sequelize";
 import {
   AttemptStatus,
   type AttemptStatusType,
   type TestAttemptAttributes,
 } from "./type.ts";
+import type { Test } from "../test/Test.model.ts";
 
 interface TestAttemptCreationAttributes extends Optional<
   TestAttemptAttributes,
@@ -23,6 +30,9 @@ export class TestAttempt
   declare score: number | null;
   declare totalQuestions: number | null;
   declare answers: number[] | null;
+
+  // Заполняется только когда включено через `include: [{ as: "test" }]`
+  declare test?: NonAttribute<Test>;
 }
 
 export const initTestAttemptModel = (sequelize: Sequelize) => {

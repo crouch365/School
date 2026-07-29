@@ -1,36 +1,24 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
+import testAttemptController from "../controllers/testAttemptController.ts";
+import authMiddleware from "../middlewares/auth.middleware.ts";
+import requireRole from "../middlewares/role.middleware.ts";
+import { UserRole } from "../models/user/type.ts";
 
 const router = Router();
 
-// POST /api/results - отправить результат (школьник сдал тест)
-router.post("/", async (req: Request, res: Response) => {
-  res.json({ message: "POST /api/results (заглушка)" });
-});
+router.use(authMiddleware);
 
-// GET /api/results/my - мои результаты (для школьника)
-router.get("/my", async (req: Request, res: Response) => {
-  res.json({ message: "GET /api/results/my (заглушка)" });
-});
+// POST /api/results - отправить ответы (только ученик, за самого себя)
+router.post("/", requireRole(UserRole.STUDENT), testAttemptController.submit);
 
-// GET /api/results/student/:studentId - результаты школьника (для учителя/админа)
-router.get("/student/:studentId", async (req: Request, res: Response) => {
-  res.json({
-    message: `GET /api/results/student/${req.params.studentId} (заглушка)`,
-  });
-});
+// GET /api/results/my - мои результаты (только ученик)
+router.get("/my", requireRole(UserRole.STUDENT), testAttemptController.getMy);
 
-// GET /api/results/test/:testId - результаты по тесту (для учителя)
-router.get("/test/:testId", async (req: Request, res: Response) => {
-  res.json({
-    message: `GET /api/results/test/${req.params.testId} (заглушка)`,
-  });
-});
-
-// PUT /api/results/:id/availability - изменить доступность результата
-router.put("/:id/availability", async (req: Request, res: Response) => {
-  res.json({
-    message: `PUT /api/results/${req.params.id}/availability (заглушка)`,
-  });
-});
+// GET /api/results/student/:studentId - результаты ученика (учитель/админ)
+router.get(
+  "/student/:studentId",
+  requireRole(UserRole.TEACHER, UserRole.ADMIN),
+  testAttemptController.getByStudent,
+);
 
 export default router;

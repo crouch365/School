@@ -1,61 +1,36 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
+import testController from "../controllers/testController.ts";
+import authMiddleware from "../middlewares/auth.middleware.ts";
+import requireRole from "../middlewares/role.middleware.ts";
+import { UserRole } from "../models/user/type.ts";
 
 const router = Router();
 
+router.use(authMiddleware); // все роуты ниже требуют авторизации
+
 // === ТЕСТЫ ===
+// Чтение доступно всем ролям — каждый метод контроллера сам решает, что показать
+router.get("/", testController.getAll);
+router.get("/:id", testController.getOne);
 
-// GET /api/tests - список тестов
-router.get("/", async (req: Request, res: Response) => {
-  res.json({ message: "GET /api/tests (заглушка)" });
-});
+// Изменения — только учитель (своих тестов) и админ
+const canManageTests = requireRole(UserRole.TEACHER, UserRole.ADMIN);
 
-// GET /api/tests/:id - тест с вопросами
-router.get("/:id", async (req: Request, res: Response) => {
-  res.json({ message: `GET /api/tests/${req.params.id} (заглушка)` });
-});
-
-// POST /api/tests - создать тест
-router.post("/", async (req: Request, res: Response) => {
-  res.json({ message: "POST /api/tests (заглушка)" });
-});
-
-// PUT /api/tests/:id - изменить тест
-router.put("/:id", async (req: Request, res: Response) => {
-  res.json({ message: `PUT /api/tests/${req.params.id} (заглушка)` });
-});
-
-// DELETE /api/tests/:id - удалить тест
-router.delete("/:id", async (req: Request, res: Response) => {
-  res.json({ message: `DELETE /api/tests/${req.params.id} (заглушка)` });
-});
+router.post("/", canManageTests, testController.create);
+router.put("/:id", canManageTests, testController.update);
+router.delete("/:id", canManageTests, testController.delete);
 
 // === ВОПРОСЫ ===
-
-// POST /api/tests/:testId/questions - добавить вопрос к тесту
-router.post("/:testId/questions", async (req: Request, res: Response) => {
-  res.json({
-    message: `POST /api/tests/${req.params.testId}/questions (заглушка)`,
-  });
-});
-
-// PUT /api/tests/:testId/questions/:questionId - изменить вопрос
+router.post("/:testId/questions", canManageTests, testController.addQuestion);
 router.put(
   "/:testId/questions/:questionId",
-  async (req: Request, res: Response) => {
-    res.json({
-      message: `PUT /api/tests/${req.params.testId}/questions/${req.params.questionId} (заглушка)`,
-    });
-  },
+  canManageTests,
+  testController.updateQuestion,
 );
-
-// DELETE /api/tests/:testId/questions/:questionId - удалить вопрос
 router.delete(
   "/:testId/questions/:questionId",
-  async (req: Request, res: Response) => {
-    res.json({
-      message: `DELETE /api/tests/${req.params.testId}/questions/${req.params.questionId} (заглушка)`,
-    });
-  },
+  canManageTests,
+  testController.deleteQuestion,
 );
 
 export default router;

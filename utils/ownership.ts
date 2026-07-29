@@ -38,3 +38,10 @@ export const assertTeachesClass = async (
     throw ApiError.forbidden(`Вы не ведёте класс "${className}"`);
   }
 };
+
+// Пользователь смотрит свои же данные, либо он админ.
+export const assertIsSelfOrAdmin = (user: JwtPayload, targetUserId: number) => {
+  if (user.role === UserRole.ADMIN) return;
+  if (user.id === targetUserId) return;
+  throw ApiError.forbidden("Доступ только к своим данным");
+};
