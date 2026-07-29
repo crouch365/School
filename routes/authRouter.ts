@@ -1,4 +1,3 @@
-// routes/authRouter.ts
 import { Router } from "express";
 import authController from "../controllers/authController.ts";
 import authMiddleware from "../middlewares/auth.middleware.ts";
