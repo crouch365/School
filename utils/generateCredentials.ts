@@ -1,4 +1,5 @@
 import { User } from "../models/index.ts";
+import { randomInt } from "node:crypto";
 
 const TRANSLIT_MAP: Record<string, string> = {
   а: "a",
@@ -42,13 +43,10 @@ const transliterate = (str: string): string =>
     .join("")
     .replace(/[^a-z0-9]/g, "");
 
-export const generatePassword = (length = 10): string => {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from(
-    { length },
-    () => chars[Math.floor(Math.random() * chars.length)],
-  ).join("");
+export const generatePassword = (length = 12): string => {
+  // без похожих символов: 0/O, 1/l/I
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  return Array.from({ length }, () => chars[randomInt(chars.length)]).join("");
 };
 
 const MAX_ATTEMPTS = 20;

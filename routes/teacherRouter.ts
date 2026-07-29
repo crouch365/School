@@ -1,29 +1,64 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
+import teacherController from "../controllers/teacherController.ts";
+import authMiddleware from "../middlewares/auth.middleware.ts";
+import requireRole from "../middlewares/role.middleware.ts";
+import validate from "../middlewares/validate.middleware.ts";
+import { UserRole } from "../models/user/type.ts";
+import {
+  assignClassSchema,
+  assignSubjectSchema,
+} from "../schemas/teacher.schema.ts";
 
 const router = Router();
 
-// GET /api/teachers/:teacherId/classes - получить классы учителя
-router.get("/:teacherId/classes", async (req: Request, res: Response) => {
-  res.json({
-    message: `GET /api/teachers/${req.params.teacherId}/classes (заглушка)`,
-  });
-});
+router.use(authMiddleware);
 
-// POST /api/teachers/:teacherId/classes - добавить класс учителю
-router.post("/:teacherId/classes", async (req: Request, res: Response) => {
-  res.json({
-    message: `POST /api/teachers/${req.params.teacherId}/classes (заглушка)`,
-  });
-});
+// Профиль учителя (сам учитель или админ)
+router.get(
+  "/:teacherId",
+  requireRole(UserRole.TEACHER, UserRole.ADMIN),
+  teacherController.getProfile,
+);
 
-// DELETE /api/teachers/:teacherId/classes/:className - убрать класс у учителя
+// === КЛАССЫ ===
+router.get(
+  "/:teacherId/classes",
+  requireRole(UserRole.TEACHER, UserRole.ADMIN),
+  teacherController.getClasses,
+);
+
+// Назначать/снимать классы — только админ
+router.post(
+  "/:teacherId/classes",
+  requireRole(UserRole.ADMIN),
+  validate({ body: assignClassSchema }),
+  teacherController.assignClass,
+);
+
 router.delete(
   "/:teacherId/classes/:className",
-  async (req: Request, res: Response) => {
-    res.json({
-      message: `DELETE /api/teachers/${req.params.teacherId}/classes/${req.params.className} (заглушка)`,
-    });
-  },
+  requireRole(UserRole.ADMIN),
+  teacherController.removeClass,
+);
+
+// === ПРЕДМЕТЫ ===
+router.get(
+  "/:teacherId/subjects",
+  requireRole(UserRole.TEACHER, UserRole.ADMIN),
+  teacherController.getSubjects,
+);
+
+router.post(
+  "/:teacherId/subjects",
+  requireRole(UserRole.ADMIN),
+  validate({ body: assignSubjectSchema }),
+  teacherController.assignSubject,
+);
+
+router.delete(
+  "/:teacherId/subjects/:subject",
+  requireRole(UserRole.ADMIN),
+  teacherController.removeSubject,
 );
 
 export default router;

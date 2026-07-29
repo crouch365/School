@@ -1,6 +1,19 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+const requiredEnv = [
+  "DB_NAME",
+  "DB_USER",
+  "DB_PASSWORD",
+  "JWT_SECRET",
+] as const;
+for (const key of requiredEnv) {
+  if (!process.env[key]) {
+    console.error(`❌ Не задана переменная окружения: ${key}`);
+    process.exit(1);
+  }
+}
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -12,17 +25,27 @@ import errorMiddleware from "./middlewares/error.middleware.ts";
 import { initModels } from "./models/index.ts";
 import sequelize from "./config/db.ts";
 
-const PORT = process.env.PORT || 5001;
+const PORT = Number(process.env.PORT) || 5001;
+const isProd = process.env.NODE_ENV === "production";
 
 const app = express();
 
 app.use(helmet());
-app.use(cors());
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? true,
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(requestLogger);
+
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.use("/api", globalRateLimiter, router);
 
-// Порядок важен: сначала все роуты, потом 404, потом error-handler.
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
@@ -30,7 +53,11 @@ const start = async () => {
   try {
     initModels(sequelize);
     await sequelize.authenticate();
-    await sequelize.sync();
+
+    // В проде — только миграции. sync здесь только для разработки.
+    if (!isProd) {
+      await sequelize.sync();
+    }
 
     app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
   } catch (error) {
