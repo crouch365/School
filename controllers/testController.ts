@@ -148,7 +148,21 @@ class TestController {
       assertOwnsTest(user, test);
 
       const { subject, title, description, timeLimit } = req.body;
-      await test.update({ subject, title, description, timeLimit });
+
+      // Собираем только переданные поля, иначе Sequelize затирает
+      // непереданные значением NULL (см. разбор в userController.update).
+      const updates: Partial<{
+        subject: string;
+        title: string;
+        description: string | null;
+        timeLimit: number;
+      }> = {};
+      if (subject !== undefined) updates.subject = subject;
+      if (title !== undefined) updates.title = title;
+      if (description !== undefined) updates.description = description;
+      if (timeLimit !== undefined) updates.timeLimit = timeLimit;
+
+      await test.update(updates);
       res.json(test);
     } catch (error) {
       next(error);

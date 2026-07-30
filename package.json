@@ -22,7 +22,8 @@
     "morgan": "^1.11.0",
     "pg": "^8.16.0",
     "sequelize": "^6.37.8",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "pino": "^9.5.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

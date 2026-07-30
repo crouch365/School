@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { User } from "../models/index.ts";
-import { UserRole } from "../models/user/type.ts";
+import { UserRole, type UserRoleType } from "../models/user/type.ts";
 import ApiError from "../errors/ApiError.ts";
 import { hashPassword } from "../utils/password.ts";
 import {
@@ -91,14 +91,30 @@ class UserController {
       }
 
       const { name, lastName, role, className } = req.body;
-      await user.update({
-        name,
-        lastName,
-        role,
-        className: role === UserRole.STUDENT ? className : null,
-      });
 
-      const { password, ...safeUser } = user.get({ plain: true });
+      // Собираем только реально переданные поля — иначе Sequelize
+      // воспринимает ключ со значением undefined как "поле изменилось
+      // на NULL" и затирает данные, которые клиент не трогал.
+      const updates: Partial<{
+        name: string;
+        lastName: string;
+        role: UserRoleType;
+        className: string | null;
+      }> = {};
+      if (name !== undefined) updates.name = name;
+      if (lastName !== undefined) updates.lastName = lastName;
+      if (role !== undefined) updates.role = role;
+
+      // Финальная роль — новая (если пришла) или уже существующая у юзера.
+      const finalRole = role ?? user.role;
+      if (className !== undefined || role !== undefined) {
+        updates.className =
+          finalRole === UserRole.STUDENT ? (className ?? user.className) : null;
+      }
+
+      await user.update(updates);
+
+      const { password: _password, ...safeUser } = user.get({ plain: true });
       res.json(safeUser);
     } catch (error) {
       next(error);

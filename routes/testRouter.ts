@@ -48,7 +48,7 @@ router.post(
 router.put(
   "/:testId/questions/:questionId",
   canManageTests,
-  validate({ body: questionSchema.partial() }),
+  validate({ body: questionSchema }),
   testController.updateQuestion,
 );
 router.delete(
