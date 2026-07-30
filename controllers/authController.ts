@@ -48,9 +48,28 @@ class AuthController {
   }
 
   async check(req: Request, res: Response, next: NextFunction) {
-    // req.user уже проверен и заполнен authMiddleware к этому моменту
-    const token = generateJwt(req.user!);
-    res.json({ token, user: req.user });
+    try {
+      // req.user — это payload СТАРОГО токена. Если админ успел поменять
+      // юзеру роль/класс, слепое переподписывание тут просто продлит
+      // токен со старыми правами. Поэтому перечитываем актуальные данные
+      // из БД и, если юзера вообще удалили, — обрываем сессию.
+      const user = await User.findByPk(req.user!.id);
+      if (!user) {
+        return next(ApiError.unauthorized("Пользователь больше не существует"));
+      }
+
+      const payload = {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        className: user.className,
+      };
+
+      const token = generateJwt(payload);
+      res.json({ token, user: payload });
+    } catch (error) {
+      next(error);
+    }
   }
 }
 
