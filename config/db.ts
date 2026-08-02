@@ -1,15 +1,11 @@
 import { Sequelize } from "sequelize";
+import { env } from "./env.ts";
 
-const sequelize = new Sequelize(
-  process.env.DB_NAME as string,
-  process.env.DB_USER as string,
-  process.env.DB_PASSWORD as string,
-
-  {
-    dialect: "postgres",
-    host: process.env.DB_HOST || "localhost",
-    port: Number(process.env.DB_PORT) || 5432,
-  },
-);
+const sequelize = new Sequelize(env.DB_NAME, env.DB_USER, env.DB_PASSWORD, {
+  dialect: "postgres",
+  host: env.DB_HOST,
+  port: env.DB_PORT,
+  logging: env.NODE_ENV === "development" ? console.log : false,
+});
 
 export default sequelize;
